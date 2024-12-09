@@ -1,45 +1,32 @@
-let express = require("express");
-let app = express();
-let httpServer = require("http").createServer(app);
-let io = require("socket.io")(httpServer);
-
-let connections = [];
-
-io.on("connect", (socket) => {
-   connections.push(socket);
-   console.log(`${socket.id} has connected`); 
-
-   socket.on("draw", (data) => {
-      connections.forEach((con) => {
-         if (con.id !== socket.id) {
-            con.emit("ondraw", { x: data.x, y: data.y });
-         }
-      });
-   });
-
-   socket.on('down' , (data) => {
-      connections.forEach((con) => {
-         if (con.id !== socket.id) {
-            con.emit("ondown", { x: data.x, y: data.y });
-         }
-      })
-   });
-
-   socket.on('clear', () => {
-      connections.forEach((con) => {
-          if (con.id !== socket.id) {
-              con.emit('clear');
-          }
-      });
-  });
-
-   socket.on("disconnect", (reason) => {
-      console.log(`${socket.id} is disconnected`); 
-      connections = connections.filter((con) => con.id !== socket.id);
-   });
-});
+const express = require("express");
+const app = express();
+const httpServer = require("http").createServer(app);
+const io = require("socket.io")(httpServer);
 
 app.use(express.static("public"));
 
-let PORT = process.env.PORT || 8080;
-httpServer.listen(PORT, () => console.log(`Server started on port ${PORT}`)); // Fix: use backticks here too
+io.on("connection", (socket) => {
+   console.log(`${socket.id} connected`);
+
+   // Broadcast drawing events
+   socket.on("draw", (data) => {
+      socket.broadcast.emit("ondraw", data);
+   });
+
+   // Broadcast "down" events
+   socket.on("down", (data) => {
+      socket.broadcast.emit("ondown", data);
+   });
+
+   // Broadcast canvas clear
+   socket.on("clear", () => {
+      socket.broadcast.emit("clear");
+   });
+
+   socket.on("disconnect", () => {
+      console.log(`${socket.id} disconnected`);
+   });
+});
+
+const PORT = process.env.PORT || 80;
+httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));
