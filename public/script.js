@@ -139,3 +139,54 @@ function applyDrawingSettings(tool, color, lineWidth, globalAlpha) {
 socket.on("clear", () => {
    ctx.clearRect(0, 0, canvas.width, canvas.height);
 });
+socket.emit("down", {
+   x,
+   y,
+   tool: currentTool,
+   color: currentColor,
+   lineWidth: ctx.lineWidth,
+   globalAlpha: ctx.globalAlpha,
+});
+socket.broadcast.emit("ondown", data);
+socket.on("clear", () => {
+   ctx.clearRect(0, 0, canvas.width, canvas.height);
+});
+document.getElementById("clearButton").addEventListener("click", () => {
+   ctx.clearRect(0, 0, canvas.width, canvas.height);
+   socket.emit("clear"); // Notify other clients
+});
+socket.on("clear", () => {
+   socket.broadcast.emit("clear");
+});
+socket.on("clear", () => {
+   socket.broadcast.emit("clear");
+});
+socket.on("replay", (history) => {
+   history.forEach(({ event, data }) => {
+      if (event === "down") {
+         applyDrawingSettings(data.tool, data.color, data.lineWidth, data.globalAlpha);
+         ctx.beginPath();
+         ctx.moveTo(data.x, data.y);
+      } else if (event === "draw") {
+         applyDrawingSettings(data.tool, data.color, data.lineWidth, data.globalAlpha);
+         ctx.lineTo(data.x, data.y);
+         ctx.stroke();
+      }
+   });
+});
+function scaleCoordinates(x, y) {
+   return {
+      x: (x / canvas.width) * 1920, // Scale to a 1920x1080 base resolution
+      y: (y / canvas.height) * 1080,
+   };
+}
+const scaled = scaleCoordinates(newX, newY);
+socket.emit("draw", {
+   x: scaled.x,
+   y: scaled.y,
+   tool: currentTool,
+   color: currentColor,
+   lineWidth: ctx.lineWidth,
+   globalAlpha: ctx.globalAlpha,
+});
+
