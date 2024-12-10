@@ -7,6 +7,11 @@ app.use(express.static("public"));
 
 let drawingHistory = []; // Store drawing events
 
+// Health check endpoint
+app.get("/health", (req, res) => {
+   res.status(200).json({ status: "ok", uptime: process.uptime(), message: "Server is healthy" });
+});
+
 io.on("connection", (socket) => {
    console.log(`${socket.id} connected`);
 
