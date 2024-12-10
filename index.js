@@ -5,24 +5,33 @@ const io = require("socket.io")(httpServer);
 
 app.use(express.static("public"));
 
+let drawingHistory = []; // Store drawing events
+
 io.on("connection", (socket) => {
    console.log(`${socket.id} connected`);
 
-   // Broadcast drawing events
+   // Send existing drawing history to the new client
+   socket.emit("replay", drawingHistory);
+
+   // Handle "draw" events
    socket.on("draw", (data) => {
+      drawingHistory.push({ event: "draw", data }); // Save draw event
       socket.broadcast.emit("ondraw", data);
    });
 
-   // Broadcast "down" events
+   // Handle "down" events
    socket.on("down", (data) => {
+      drawingHistory.push({ event: "down", data }); // Save down event
       socket.broadcast.emit("ondown", data);
    });
 
-   // Broadcast canvas clear
+   // Handle "clear" events
    socket.on("clear", () => {
-      socket.broadcast.emit("clear");
+      drawingHistory = []; // Clear history
+      io.emit("clear"); // Notify all clients (including sender)
    });
 
+   // Handle disconnection
    socket.on("disconnect", () => {
       console.log(`${socket.id} disconnected`);
    });
