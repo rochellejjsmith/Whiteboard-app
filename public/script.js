@@ -2,7 +2,7 @@ const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const colorPicker = document.getElementById("colorPicker");
 const tools = document.querySelectorAll(".tool");
-const socket = io.connect("http://localhost:80/");
+const socket = io.connect("http://localhost:8080/");
 
 canvas.width = window.innerWidth * 0.8; // Center canvas
 canvas.height = window.innerHeight * 0.8;
