@@ -1,21 +1,26 @@
-// index.js
 const express = require('express');
 const app = express();
 const httpServer = require('http').createServer(app);
 const io = require('socket.io')(httpServer);
-const db = require('./db'); // Import the database connection
+const dynamoDb = require('./db'); // Import the DynamoDB DocumentClient
+
 app.use(express.static('public'));
 
-// Store drawing history in the database and provide a history endpoint
-app.get('/history', (req, res) => {
-  db.query('SELECT * FROM drawing_events', (err, results) => {
-    if (err) {
-      console.error('Error fetching drawing history:', err);
-      res.status(500).send('Database error');
-    } else {
-      res.json(results);
-    }
-  });
+// DynamoDB Table Name
+const TABLE_NAME = 'DrawingEvents';
+
+// Store drawing history and provide a history endpoint
+app.get('/history', async (req, res) => {
+  try {
+    const params = {
+      TableName: TABLE_NAME,
+    };
+    const result = await dynamoDb.scan(params).promise();
+    res.json(result.Items); // Return all drawing events
+  } catch (error) {
+    console.error('Error fetching drawing history:', error);
+    res.status(500).send('Database error');
+  }
 });
 
 // Health check endpoint
@@ -28,7 +33,7 @@ app.get('/health', (req, res) => {
 });
 
 // Manage socket connections
-let drawingHistory = []; // Store drawing events
+let drawingHistory = []; // Store drawing events in memory for live clients
 
 io.on('connection', (socket) => {
   console.log(`${socket.id} connected`);
@@ -37,44 +42,66 @@ io.on('connection', (socket) => {
   socket.emit('replay', drawingHistory);
 
   // Handle "draw" events
-  socket.on('draw', (data) => {
-    drawingHistory.push({ event: 'draw', data }); // Save draw event to history
+  socket.on('draw', async (data) => {
+    drawingHistory.push({ event: 'draw', data }); // Save event to memory
     io.emit('ondraw', data); // Broadcast drawing to other clients
-    
-    // Save drawing event to the database
-    db.query(
-      'INSERT INTO drawing_events (x, y, tool, color, lineWidth, globalAlpha) VALUES (?, ?, ?, ?, ?, ?)', 
-      [data.x, data.y, data.tool, data.color, data.lineWidth, data.globalAlpha],
-      (err) => {
-        if (err) console.error('Error saving drawing event:', err);
-      }
-    );
+
+    // Save event to DynamoDB
+    const params = {
+      TableName: TABLE_NAME,
+      Item: {
+        id: `${Date.now()}-${Math.random()}`, // Unique ID for the event
+        event: 'draw',
+        ...data, // Include event data
+      },
+    };
+    try {
+      await dynamoDb.put(params).promise();
+    } catch (error) {
+      console.error('Error saving drawing event:', error);
+    }
   });
 
   // Handle "down" events
-  socket.on('down', (data) => {
+  socket.on('down', async (data) => {
     drawingHistory.push({ event: 'down', data });
     io.emit('ondown', data);
-    
-    // Save "down" event to the database
-    db.query(
-      'INSERT INTO drawing_events (x, y, tool, color, lineWidth, globalAlpha) VALUES (?, ?, ?, ?, ?, ?)', 
-      [data.x, data.y, data.tool, data.color, data.lineWidth, data.globalAlpha],
-      (err) => {
-        if (err) console.error('Error saving "down" event:', err);
-      }
-    );
+
+    // Save "down" event to DynamoDB
+    const params = {
+      TableName: TABLE_NAME,
+      Item: {
+        id: `${Date.now()}-${Math.random()}`,
+        event: 'down',
+        ...data,
+      },
+    };
+    try {
+      await dynamoDb.put(params).promise();
+    } catch (error) {
+      console.error('Error saving "down" event:', error);
+    }
   });
 
   // Handle "clear" events
-  socket.on('clear', () => {
-    drawingHistory = []; // Clear drawing history
+  socket.on('clear', async () => {
+    drawingHistory = []; // Clear in-memory history
     io.emit('clear'); // Notify all clients to clear canvas
-    
-    // Clear drawing history from the database
-    db.query('DELETE FROM drawing_events', (err) => {
-      if (err) console.error('Error clearing drawing history:', err);
-    });
+
+    // Delete all events from DynamoDB
+    try {
+      const scanParams = { TableName: TABLE_NAME };
+      const scanResult = await dynamoDb.scan(scanParams).promise();
+      const deleteRequests = scanResult.Items.map((item) => ({
+        DeleteRequest: { Key: { id: item.id } },
+      }));
+      if (deleteRequests.length > 0) {
+        const deleteParams = { RequestItems: { [TABLE_NAME]: deleteRequests } };
+        await dynamoDb.batchWrite(deleteParams).promise();
+      }
+    } catch (error) {
+      console.error('Error clearing drawing history:', error);
+    }
   });
 
   // Handle disconnection
